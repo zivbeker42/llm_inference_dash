@@ -1,0 +1,10 @@
+ttft:
+  # TTFT = (coefficient * prompt_tokens) + random_deviation
+  coefficient: 0.005  # seconds per token
+  deviation_min: 0.01 # seconds
+  deviation_max: 0.02 # seconds
+itl:
+  # ITL per token = base_delay + random_deviation
+  base_delay: 0.008      # seconds per token
+  deviation_min: 0.0   # seconds
+  deviation_max: 0.004 # seconds

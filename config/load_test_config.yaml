@@ -1,0 +1,11 @@
+load_test:
+  duration_seconds: 300
+  target_arrival_rate_per_second: 1.0
+
+message_content:
+  min_words: 100
+  max_words: 10000
+
+server:
+  base_url: "http://localhost:8000"
+  chat_completions_endpoint: "/v1/chat/completions"
