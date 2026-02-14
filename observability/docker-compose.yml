@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  vllm-mock-server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    expose:
+      - "8000"
+    command: uvicorn src.vllm_mock:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ../src:/app/src
+      - ../config:/app/config
+
+  gateway:
+    build:
+      context: ../gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    expose:
+      - "8080"
+    environment:
+      - VLLM_MOCK_SERVER_URL=http://vllm-mock-server:8000
+      - GATEWAY_API_KEY=super-secret-key
+    depends_on:
+      - vllm-mock-server
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - "9090:9090"
+    depends_on:
+      - vllm-mock-server
+      - gateway
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin1
+      - GF_SECURITY_ADMIN_PASSWORD=admin1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus

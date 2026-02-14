@@ -1,0 +1,25 @@
+# Request Quotas
+# A list of applications and their associated quotas.
+# - app_id: A unique identifier for the application.
+# - enabled: Whether to enforce quotas for this app.
+# - rate_limit: Maximum number of requests allowed.
+# - per_seconds: The time window for the rate limit in seconds.
+
+quotas:
+  - app_id: "fraud-model-v1"
+    enabled: true
+    rate_limit: 100
+    per_seconds: 60
+
+  - app_id: "invoice-parser"
+    enabled: true
+    rate_limit: 50
+    per_seconds: 60
+
+  - app_id: "blog-writer"
+    enabled: false # Quotas disabled for this app
+
+  - app_id: "default"
+    enabled: true
+    rate_limit: 10
+    per_seconds: 1

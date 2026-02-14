@@ -1,0 +1,176 @@
+Implement an end-to-end “LLM Inference PaaS Observability + Dashboards” MVP for vLLM that matches the exact stakeholder dashboards described below.
+
+Context / goals:
+- We run vLLM as our primary on-prem inference server.
+- We must provide stakeholder-specific dashboards:
+  1) Org leaders (VPs/directors)
+  2) Infrastructure leaders
+  3) Infrastructure DevOps engineers (on-call/operators)
+  4) Customers (LLM app developers)
+  5) Optional end-user status page
+- KPIs must align with: Adoption, Reliability, Efficiency, Scalability, Governance.
+- We need a load test that targets vLLM (OpenAI-compatible API) and emits labeled metrics so the dashboards can be populated.
+
+Hard requirements:
+- Produce production-quality code (well-structured, documented, typed where relevant).
+- Provide a runnable local/dev setup using Docker Compose (preferred).
+- Instrument metrics using Prometheus (preferred) + Grafana dashboards JSON.
+- Include a synthetic load generator (“test”) that:
+  - Sends OpenAI-compatible requests to vLLM
+  - Simulates multiple teams/apps/tiers/models
+  - Emits request-level metrics + aggregates
+  - Can run deterministic scenarios and burst scenarios
+  - Supports both streaming and non-streaming
+- Do NOT require external SaaS. Everything must be self-hosted.
+
+Deliverables (files you must create):
+1) docker-compose.yml
+   - vLLM mock - but architecture should support real vLLM
+   - Prometheus
+   - Grafana
+2) A load-test tool under ./loadtest (Python recommended)
+   - CLI: `python -m loadtest run --base-url ... --scenario ...`
+   - Scenarios:
+     - steady: constant traffic
+     - burst: spikes to test queueing and scale-up behavior (even if scale-up is simulated)
+     - multi-tenant: different api keys / teams / tiers / app_ids
+     - long-context: large prompt sizes to induce KV pressure
+     - cancel/retry-storm: misbehaving client pattern
+   - Each request MUST include headers/tags:
+     - org_unit, team, app_id, api_key_id, tier, model, deployment, cluster, gpu_pool
+     - Optional header: X-End-User-ID
+3) A small “metrics gateway” service under ./gateway (if needed)
+   - If vLLM does not expose all metrics, implement a sidecar gateway that:
+     - Terminates incoming OpenAI API calls (reverse proxy)
+     - Forwards them to vLLM
+     - Measures latency decomposition as best as possible
+     - Exposes Prometheus metrics
+   - If reverse proxy is used, also implement:
+     - simple API key auth
+     - rate limiting / quota signals (at least as counters)
+     - request attribution to team/app/tier
+4) Prometheus config under ./observability/prometheus
+5) Grafana dashboards JSON under ./observability/grafana/dashboards
+6) A README.md that explains:
+   - How to run everything
+   - How to run scenarios
+   - How the metrics map to the dashboards and stakeholders
+
+Metric model (implement these metrics at minimum):
+A) Adoption (aggregated by app_id/team/tier)
+- weekly_active_app (derive via recording rules or Grafana queries): define “active app” as >= 3 distinct active days in the last 7d AND >= 200 requests in the last 7d
+- new_apps_per_month (approx: first_seen timestamp per app_id)
+- active_teams_weekly (teams with traffic last 7d)
+- apps_by_tier (current active apps grouped by tier)
+
+B) Reliability (per model/deployment and per app)
+- request_total{status_code, error_type, model, app_id, team, tier}
+- request_latency_seconds_bucket{phase=queue|ttft|total, ...} (histograms)
+- availability_slo_success{tier=SLA, ...} (counter or derived) where success=2xx within 30s
+- error_rate by type (timeouts, rate_limit, server_error, oom, auth, upstream)
+
+C) Efficiency (per model/deployment and per customer)
+- tokens_total{direction=input|output, model, app_id, team, tier}
+- tokens_per_second (derived)
+- efficiency_ratio = actual_tokens_per_second / baseline_tokens_per_second (baseline stored in config per model+gpu)
+- queue_wait_seconds (hist)
+- vllm_inflight_requests (gauge) (proxy gauge if needed)
+- vllm_concurrent_sequences (gauge) (proxy gauge if needed)
+- batching: decode_batch_size (hist or summary; approximate if needed)
+- kv_cache:
+  - kv_cache_usage_ratio (gauge) (proxy if needed)
+  - kv_cache_evictions_total (counter) (proxy if needed)
+  - prefix_cache_hit_ratio (gauge) if implemented; else emit “unknown/na”
+
+D) Scalability
+- concurrent_inflight_requests (gauge)
+- scale_up_events_total (counter) and scale_up_time_seconds (hist) (can be simulated based on thresholds if no real autoscaler)
+- models_served_concurrently (gauge)
+- gpus_allocated_by_model (gauge; can be configured/static in MVP)
+
+E) Governance / cost attribution
+- traffic_attributed_ratio (derived: attributed_requests / total_requests) should approach 1.0
+- gpu_hours_estimated_total{team, app_id, model} (counter) computed from tokens and baseline or from measured tokens/sec -> time
+- quota_usage_ratio{team, app_id, tier} (gauge) and over_quota_requests_total (counter)
+- misuse signals:
+  - cancels_total, retries_total
+  - max_tokens_cap_hit_total
+  - large_prompt_requests_total (above threshold)
+
+Dashboards (must match these stakeholder panels):
+
+1) Organization leaders dashboard (monthly)
+- WAA by tier + trend
+- new apps/month
+- active teams/week
+- tier graduation flow (counts of tier transitions; approximate OK)
+- GPU-hours + estimated cost per org_unit/team (monthly)
+- cost per 1M tokens per team
+- top 10 apps/teams by cost (Pareto)
+- % traffic attributed (should be ~100%)
+- SLA compliance (SLA tier): availability SLO + p95 TTFT + p95 total time
+- waste signals: cancel %, timeout %, retries %
+
+2) Infrastructure leaders dashboard
+- peak concurrent inflight + sequences by model/cluster
+- GPU pool saturation (% time above X% util)
+- scale-up count + p50/p90 time
+- # models served concurrently + GPUs allocated per model over time
+- availability per model/deployment
+- incident count + MTTR (derive: time from error spike to recovery; approximate OK)
+- error breakdown by type (OOM, timeout, load failure, network, auth, rate-limit)
+- tokens/sec/GPU + efficiency ratio by model
+- queue mean/p95 by deployment
+- KV cache pressure: evictions, usage ratio, fragmentation proxy
+
+3) DevOps engineers (on-call) dashboard
+- live SLO burn view (SLA tier)
+- error rate by type (1h/24h)
+- incident timeline with deploy markers (include a manual “deployment_event” metric)
+- latency decomposition (queue vs ttft vs total) p50/p95/p99
+- vLLM internals: concurrent sequences, inflight, batch size distribution, prefill vs decode split if possible
+- GPU/node health: restarts, OOMs, throttling (simulate if needed)
+- customer misuse: top apps by timeouts/cancels; prompt size distributions; cap hit rate; retry storms
+
+4) Customer (app developer) dashboard
+- requests/day, tokens/day (in/out)
+- estimated cost by app_id
+- quota usage vs quota + forecast
+- latency p50/p95 (ttft, total) for their app
+- error breakdown (timeout, rate-limit, server error)
+- “slow request examples” sampling (if too hard, provide a table of top latency labels without payload)
+- efficiency coaching panels (rule-based):
+  - high queue delay -> recommend reduce burst/upgrade tier
+  - high timeouts with large prompts -> recommend shorten prompts/use RAG
+  - high cancel/retry -> recommend backoff
+- SLA compliance if tier includes SLA
+- planned maintenance / incident banner (optional)
+
+5) Optional status page
+- global service health (healthy/degraded)
+- coarse latency + success rate
+- per major model status
+
+Implementation notes:
+- If real vLLM metrics are hard, implement proxy metrics in the gateway that approximate:
+  - queue delay (client send -> upstream first byte start)
+  - TTFT (time to first token in streaming)
+  - total time
+  - inflight requests (active requests in gateway)
+  - concurrent sequences (approx = inflight requests, unless you implement better)
+- Baseline tokens/sec per model+gpu_pool stored in config file: ./config/baselines.yaml
+- Quotas per tier stored in ./config/quotas.yaml
+
+Acceptance criteria:
+- `docker compose up` starts Prometheus + Grafana + gateway (+ vLLM or mock).
+- `python -m loadtest run --scenario multi-tenant` produces metrics visible in Prometheus.
+- Grafana shows the 4 dashboards (plus optional status page) with the panels listed above, with sensible defaults and filters.
+- README clearly maps each KPI to a metric and each dashboard panel.
+
+Start by:
+1) Proposing the repo structure.
+2) Implementing the gateway metrics and loadtest.
+3) Writing Prometheus scrape config + recording rules for WAA and cost.
+4) Creating Grafana dashboard JSON with variables (team, app_id, tier, model, deployment, cluster).
+
+Do not ask me questions; make reasonable assumptions and document them.

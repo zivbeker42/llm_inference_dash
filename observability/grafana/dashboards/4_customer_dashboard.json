@@ -1,0 +1,112 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": 4,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "pluginVersion": "8.2.1",
+      "targets": [
+        {
+          "expr": "sum(increase(requests_by_tenant{org_unit=\\"$org_unit\\", team=\\"$team\\", app_id=\\"$app_id\\"}[$__range]))",
+          "legendFormat": "Total Requests",
+          "refId": "A"
+        }
+      ],
+      "title": "Total Requests in Period",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 8 },
+      "id": 2,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(requests_by_tenant{org_unit=\\"$org_unit\\", team=\\"$team\\", app_id=\\"$app_id\\"}[5m])) by (model)",
+          "legendFormat": "{{model}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Request Rate by Model",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 30,
+  "style": "dark",
+  "tags": [],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": "Prometheus",
+        "definition": "label_values(requests_by_tenant, org_unit)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "org_unit",
+        "options": [],
+        "query": "label_values(requests_by_tenant, org_unit)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": "Prometheus",
+        "definition": "label_values(requests_by_tenant{org_unit=\\"$org_unit\\"}, team)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "team",
+        "options": [],
+        "query": "label_values(requests_by_tenant{org_unit=\\"$org_unit\\"}, team)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": "Prometheus",
+        "definition": "label_values(requests_by_tenant{org_unit=\\"$org_unit\\", team=\\"$team\\"}, app_id)",
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "app_id",
+        "options": [],
+        "query": "label_values(requests_by_tenant{org_unit=\\"$org_unit\\", team=\\"$team\\"}, app_id)",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Customer Dashboard",
+  "uid": "customer-dashboard",
+  "version": 1
+}
